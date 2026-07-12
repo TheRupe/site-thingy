@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment Pool</title>
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script src="https://unpkg.com/@solana/wallet-adapter-base@latest/lib/index.iife.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #f5f5f5; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 20px; }
+        .connect-btn { background: #512da8; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; }
+        .connect-btn:hover { background: #3d1b7a; }
+        .card-title { font-size: 1.3rem; margin-bottom: 20px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .stat { text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; }
+        .stat-label { font-size: 0.85rem; color: #666; margin-bottom: 5px; text-transform: uppercase; }
+        .stat-value { font-size: 1.4rem; font-weight: bold; color: #333; }
+        .phase-depositing { color: #28a745; }
+        .phase-invested { color: #ffc107; }
+        .phase-liquidated { color: #17a2b8; }
+        .input-group { display: flex; gap: 10px; margin: 15px 0; }
+        input { flex: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; }
+        button { padding: 12px 24px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        .btn-deposit { background: #28a745; color: white; }
+        .btn-deposit:hover { background: #218838; }
+        .btn-claim { background: #007bff; color: white; width: 100%; }
+        .btn-claim:hover { background: #0056b3; }
+        .btn-disabled { background: #ccc; color: #666; cursor: not-allowed; }
+        .hint { color: #666; font-size: 0.9rem; margin-top: 10px; }
+        .message { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+        .message-success { background: #d4edda; color: #155724; }
+        .message-error { background: #f8d7da; color: #721c24; }
+        .info-box { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; }
+        .info-box h3 { margin-bottom: 15px; color: #333; }
+        .info-box ol { padding-left: 20px; color: #666; line-height: 1.8; }
+        .wallet-info { background: #e3f2fd; padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center; word-break: break-all; }
+        .action-section { margin-bottom: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .disabled { color: #999; font-style: italic; text-align: center; padding: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header card">
+            <h1>🚀 Investment Pool</h1>
+            <p class="subtitle">Deposit tokens, earn proportional yields</p>
+            <button id="connectBtn" class="connect-btn">Connect Wallet</button>
+            <div id="walletInfo" class="wallet-info hidden"></div>
+        </div>
+
+        <!-- Messages -->
+        <div id="messageArea"></div>
+
+        <!-- Not Connected View -->
+        <div id="notConnectedView" class="card">
+            <h2 class="card-title">Welcome</h2>
+            <p style="color: #666; line-height: 1.6; margin-bottom: 20px;">
+                Connect your Solana wallet to view pool details, make deposits, and claim returns.
+            </p>
+            <div class="info-box">
+                <h3>How it works:</h3>
+                <ol>
+                    <li>Connect your Phantom or Solflare wallet</li>
+                    <li>Deposit USDC during the deposit phase</li>
+                    <li>Pool admin invests pooled funds in target assets</li>
+                    <li>After liquidation, claim your proportional share of profits</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Connected View -->
+        <div id="connectedView" class="hidden">
+            <!-- Pool Status -->
+            <div class="card">
+                <h2 class="card-title">Pool Status</h2>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-label">Phase</div>
+                        <div id="poolPhase" class="stat-value phase-depositing">Depositing</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Total Deposited</div>
+                        <div id="totalDeposited" class="stat-value">0 USDC</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Total Shares</div>
+                        <div id="totalShares" class="stat-value">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Participants</div>
+                        <div id="participants" class="stat-value">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Position -->
+            <div class="card">
+                <h2 class="card-title">Your Position</h2>
+                <div id="positionContent" class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-label">Your Shares</div>
+                        <div id="userShares" class="stat-value">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Pool Share %</div>
+                        <div id="userPercentage" class="stat-value">0%</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Est. Payout</div>
+                        <div id="estimatedPayout" class="stat-value">0 USDC</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Wallet Balance</div>
+                        <div id="walletBalance" class="stat-value">0 USDC</div>
+                    </div>
+                </div>
+                <p id="noPositionMsg" class="disabled hidden">You haven't made a deposit yet.</p>
+            </div>
+
+            <!-- Actions -->
+            <div class="card">
+                <h2 class="card-title">Actions</h2>
+                
+                <!-- Deposit -->
+                <div id="depositSection" class="action-section">
+                    <h3 style="margin-bottom: 15px; color: #333;">Make a Deposit</h3>
+                    <div class="input-group">
+                        <input type="number" id="depositAmount" placeholder="Amount (USDC)" min="0" step="0.1">
+                        <button id="depositBtn" class="btn-deposit">Deposit</button>
+                    </div>
+                    <p class="hint" id="balanceHint">Available: 0 USDC</p>
+                </div>
+
+                <div id="depositClosed" class="disabled hidden">
+                    Deposits are currently closed. Pool is in investment phase.
+                </div>
+
+                <!-- Claim -->
+                <div class="action-section">
+                    <h3 style="margin-bottom: 15px; color: #333;">Claim Returns</h3>
+                    <div id="claimSection">
+                        <p style="color: #666; margin-bottom: 15px;">
+                            You can claim <strong id="claimAmount">0 USDC</strong>
+                        </p>
+                        <button id="claimBtn" class="btn-claim">Claim Returns</button>
+                    </div>
+                    <p id="claimDisabled" class="disabled hidden">
+                        Pool has not been liquidated yet. Check back later.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let wallet = null;
+        let walletAddress = null;
+        let poolData = {
+            phase: 'Depositing',
+            totalDeposited: 0,
+            totalShares: 0,
+            participants: 0
+        };
+        let userData = {
+            shares: 0,
+            balance: 0
+        };
+
+        // DOM Elements
+        const connectBtn = document.getElementById('connectBtn');
+        const walletInfo = document.getElementById('walletInfo');
+        const notConnectedView = document.getElementById('notConnectedView');
+        const connectedView = document.getElementById('connectedView');
+        const messageArea = document.getElementById('messageArea');
+
+        // Connect Wallet
+        connectBtn.addEventListener('click', async () => {
+            try {
+                // Check for Phantom
+                if (window.solana && window.solana.isPhantom) {
+                    const resp = await window.solana.connect();
+                    walletAddress = resp.publicKey.toString();
+                    wallet = window.solana;
+                } 
+                // Check for Solflare
+                else if (window.solflare) {
+                    const resp = await window.solflare.connect();
+                    walletAddress = resp.publicKey.toString();
+                    wallet = window.solflare;
+                }
+                else {
+                    showMessage('Please install Phantom or Solflare wallet', 'error');
+                    return;
+                }
+
+                updateUI();
+                showMessage('Wallet connected successfully!', 'success');
+            } catch (err) {
+                showMessage('Failed to connect wallet: ' + err.message, 'error');
+            }
+        });
+
+        // Update UI based on state
+        function updateUI() {
+            if (walletAddress) {
+                connectBtn.classList.add('hidden');
+                walletInfo.classList.remove('hidden');
+                walletInfo.textContent = 'Connected: ' + walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4);
+                notConnectedView.classList.add('hidden');
+                connectedView.classList.remove('hidden');
+                
+                // Simulate fetching data
+                fetchPoolData();
+            }
+        }
+
+        // Show message
+        function showMessage(text, type) {
+            messageArea.innerHTML = `<div class="message message-${type}">${text}</div>`;
+            setTimeout(() => {
+                messageArea.innerHTML = '';
+            }, 5000);
+        }
+
+        // Simulate fetching pool data (replace with real RPC calls)
+        function fetchPoolData() {
+            // This is where you'd make actual RPC calls to your program
+            // For demo purposes, showing the UI structure
+            
+            document.getElementById('poolPhase').textContent = poolData.phase;
+            document.getElementById('totalDeposited').textContent = poolData.totalDeposited + ' USDC';
+            document.getElementById('totalShares').textContent = poolData.totalShares;
+            document.getElementById('participants').textContent = poolData.participants;
+            
+            document.getElementById('userShares').textContent = userData.shares;
+            document.getElementById('userPercentage').textContent = poolData.totalShares > 0 ? 
+                ((userData.shares / poolData.totalShares) * 100).toFixed(4) + '%' : '0%';
+            document.getElementById('walletBalance').textContent = userData.balance + ' USDC';
+            document.getElementById('balanceHint').textContent = 'Available: ' + userData.balance + ' USDC';
+            
+            // Update phase colors
+            const phaseEl = document.getElementById('poolPhase');
+            phaseEl.className = 'stat-value phase-' + poolData.phase.toLowerCase();
+        }
+
+        // Deposit button
+        document.getElementById('depositBtn').addEventListener('click', () => {
+            const amount = document.getElementById('depositAmount').value;
+            if (!amount || amount <= 0) {
+                showMessage('Please enter a valid amount', 'error');
+                return;
+            }
+            showMessage('Deposit transaction would be sent here. Amount: ' + amount + ' USDC', 'success');
+        });
+
+        // Claim button
+        document.getElementById('claimBtn').addEventListener('click', () => {
+            showMessage('Claim transaction would be processed here', 'success');
+        });
+
+        // Auto-refresh every 10 seconds
+        setInterval(() => {
+            if (walletAddress) fetchPoolData();
+        }, 10000);
+    </script>
+</body>
+</html>
